@@ -5,9 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://buymeacoffee.com/mike_pavlukhin)
 
-> **Modular non-Python REPL engines for DSPy Recursive Language Models.**
+> **Modular non-Python REPL engines for [DSPy](https://github.com/stanfordnlp/dspy) Recursive Language Models.**
 
-`dspy-repl` is a modular package for non-Python REPL-based RLM engines compatible with DSPy.
+`dspy-repl` is a modular package for non-Python REPL-based RLM engines compatible with [DSPy](https://github.com/stanfordnlp/dspy), inspired by the [Recursive Language Models paper](https://arxiv.org/abs/2512.24601).
 
 ## Scope
 
