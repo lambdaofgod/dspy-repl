@@ -193,3 +193,11 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q
 python -m twine check --strict dist/*
 ```
 
+## Backlog
+
+- Add JavaScript REPL.
+- Add shared context with PostgreSQL/MySQL.
+- Test shared context in a multi-agent environment.
+- Run more benchmarks.
+- Optimize REPL instructions with GEPA.
+
