@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator, cast
 
-from dspy_repl import HaskellRLM, SQLRLM, SchemeRLM
+from dspy_repl import SQLRLM, HaskellRLM, SchemeRLM
 from dspy_repl.benchmarks.config import BenchmarkConfig, Language, build_arg_parser, load_benchmark_config
 from dspy_repl.benchmarks.logging_utils import log_event, setup_benchmark_logger
 from dspy_repl.compat import dspy
@@ -122,6 +122,36 @@ def _check_prerequisites() -> dict[Language, bool]:
     }
 
 
+def _normalize_trajectory(raw_trajectory: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_trajectory, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for item in raw_trajectory:
+        payload = _to_jsonable(item)
+        if isinstance(payload, dict):
+            normalized.append(payload)
+        else:
+            normalized.append({"value": payload})
+    return normalized
+
+
+def _to_jsonable(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _to_jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_to_jsonable(v) for v in value]
+    if hasattr(value, "model_dump"):
+        try:
+            dumped = value.model_dump(mode="json")  # type: ignore[call-arg]
+            return _to_jsonable(dumped)
+        except Exception:
+            return str(value)
+    return str(value)
+
+
 def resolve_runnable_languages(requested: tuple[Language, ...], logger: logging.Logger) -> list[Language]:
     available = _check_prerequisites()
     runnable: list[Language] = []
@@ -216,7 +246,7 @@ def execute_task(
 
         output_field = next(iter(dspy.Signature(signature).output_fields.keys()))  # type: ignore[attr-defined]
         answer = getattr(result, output_field, str(result))
-        trajectory = getattr(result, "trajectory", [])
+        trajectory = _normalize_trajectory(getattr(result, "trajectory", []))
 
         score: float | None = None
         if expected is not None:
@@ -228,12 +258,12 @@ def execute_task(
             task_name=task_name,
             engine=language,
             answer=str(answer),
-            iterations=len(trajectory) if isinstance(trajectory, list) else 0,
+            iterations=len(trajectory),
             elapsed_seconds=elapsed_seconds,
             success=True,
             expected=str(expected) if expected is not None else None,
             score=score,
-            trajectory=list(trajectory) if isinstance(trajectory, list) else [],
+            trajectory=trajectory,
             sql_profile=sql_profile if isinstance(sql_profile, dict) else None,
         )
     except Exception as exc:  # pragma: no cover - depends on runtime failures
@@ -284,7 +314,8 @@ def _run_task_across_languages(
     )
 
     futures_by_lang: dict[Language, Future[TaskResult]] = {
-        language: executor.submit(_run_task_worker, language=language, task=task, config=config) for language in languages
+        language: executor.submit(_run_task_worker, language=language, task=task, config=config)
+        for language in languages
     }
     ordered_results: dict[Language, TaskResult] = {}
     for finished in as_completed(futures_by_lang.values()):
@@ -324,9 +355,7 @@ def summarize_results(results: list[TaskResult]) -> dict[str, dict[str, float]]:
             "total": float(len(rows)),
             "successes": float(len(ok_rows)),
             "success_rate": (len(ok_rows) / len(rows)) if rows else 0.0,
-            "avg_elapsed_seconds": (
-                sum(row.elapsed_seconds for row in ok_rows) / len(ok_rows) if ok_rows else 0.0
-            ),
+            "avg_elapsed_seconds": (sum(row.elapsed_seconds for row in ok_rows) / len(ok_rows) if ok_rows else 0.0),
             "avg_iterations": (sum(row.iterations for row in ok_rows) / len(ok_rows) if ok_rows else 0.0),
             "avg_score": (sum(scores) / len(scores)) if scores else 0.0,
         }

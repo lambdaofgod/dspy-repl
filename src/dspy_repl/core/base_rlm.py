@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import warnings
 from abc import abstractmethod
 from contextlib import contextmanager
 from typing import Any, Callable, Iterator
@@ -20,6 +21,7 @@ class BaseReplRLM(Module):
 
     _RESERVED_TOOL_NAMES: frozenset[str] = frozenset()
     _CODE_FENCE_PATTERN: re.Pattern[str]
+    _PYDANTIC_SERIALIZER_WARNING_RE = r".*Pydantic serializer warnings:.*"
 
     def __init__(
         self,
@@ -196,7 +198,7 @@ class BaseReplRLM(Module):
             assert parsed_outputs is not None
             return Prediction(
                 **parsed_outputs,
-                trajectory=[e.model_dump() for e in final_history],
+                trajectory=self._serialize_trajectory(final_history),
                 final_reasoning=pred.reasoning,
             )
 
@@ -219,11 +221,12 @@ class BaseReplRLM(Module):
         output_field_names: list[str],
     ) -> Prediction | REPLHistory:
         variables_info = self._variables_info_for_prompt(repl, variables)
-        action = self.generate_action(
-            variables_info=variables_info,
-            repl_history=history,
-            iteration=f"{iteration + 1}/{self.max_iterations}",
-        )
+        with self._suppress_known_pydantic_serializer_warning():
+            action = self.generate_action(
+                variables_info=variables_info,
+                repl_history=history,
+                iteration=f"{iteration + 1}/{self.max_iterations}",
+            )
         self._log_iteration(iteration, action)
         try:
             code = self._strip_code_fences(action.code)
@@ -242,11 +245,12 @@ class BaseReplRLM(Module):
         output_field_names: list[str],
     ) -> Prediction | REPLHistory:
         variables_info = self._variables_info_for_prompt(repl, variables)
-        action = await self.generate_action.acall(
-            variables_info=variables_info,
-            repl_history=history,
-            iteration=f"{iteration + 1}/{self.max_iterations}",
-        )
+        with self._suppress_known_pydantic_serializer_warning():
+            action = await self.generate_action.acall(
+                variables_info=variables_info,
+                repl_history=history,
+                iteration=f"{iteration + 1}/{self.max_iterations}",
+            )
         self._log_iteration(iteration, action)
         try:
             code = self._strip_code_fences(action.code)
@@ -262,9 +266,10 @@ class BaseReplRLM(Module):
         output_field_names: list[str],
     ) -> Prediction:
         logger.warning("%s reached max iterations, using extract to get final output", self.__class__.__name__)
-        extract_pred = self.extract(variables_info=variables_info, repl_history=history)
+        with self._suppress_known_pydantic_serializer_warning():
+            extract_pred = self.extract(variables_info=variables_info, repl_history=history)
         return Prediction(
-            trajectory=[e.model_dump() for e in history],
+            trajectory=self._serialize_trajectory(history),
             final_reasoning="Extract forced final output",
             **{name: getattr(extract_pred, name) for name in output_field_names},
         )
@@ -276,9 +281,10 @@ class BaseReplRLM(Module):
         output_field_names: list[str],
     ) -> Prediction:
         logger.warning("%s reached max iterations, using extract to get final output", self.__class__.__name__)
-        extract_pred = await self.extract.acall(variables_info=variables_info, repl_history=history)
+        with self._suppress_known_pydantic_serializer_warning():
+            extract_pred = await self.extract.acall(variables_info=variables_info, repl_history=history)
         return Prediction(
-            trajectory=[e.model_dump() for e in history],
+            trajectory=self._serialize_trajectory(history),
             final_reasoning="Extract forced final output",
             **{name: getattr(extract_pred, name) for name in output_field_names},
         )
@@ -327,6 +333,37 @@ class BaseReplRLM(Module):
                 action.reasoning,
                 action.code,
             )
+
+    @contextmanager
+    def _suppress_known_pydantic_serializer_warning(self) -> Iterator[None]:
+        """
+        Suppress known non-fatal warnings emitted by upstream LM response serialization.
+        """
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=self._PYDANTIC_SERIALIZER_WARNING_RE,
+                category=UserWarning,
+                module=r"pydantic\.main",
+            )
+            yield
+
+    def _serialize_trajectory(self, history: REPLHistory) -> list[dict[str, Any]]:
+        trajectory: list[dict[str, Any]] = []
+        for entry in history:
+            try:
+                payload = entry.model_dump(mode="json")
+            except Exception:
+                payload = {
+                    "reasoning": getattr(entry, "reasoning", ""),
+                    "code": getattr(entry, "code", ""),
+                    "output": str(getattr(entry, "output", "")),
+                }
+            if isinstance(payload, dict):
+                trajectory.append(payload)
+            else:
+                trajectory.append({"value": str(payload)})
+        return trajectory
 
     @abstractmethod
     def _new_history(self) -> REPLHistory:
