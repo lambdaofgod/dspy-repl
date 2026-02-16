@@ -1,4 +1,11 @@
-# dspy-repl
+# DSPy-REPL
+
+[![Tests](https://github.com/Archelunch/dspy-repl/actions/workflows/ci.yml/badge.svg)](https://github.com/Archelunch/dspy-repl/actions)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://buymeacoffee.com/mike_pavlukhin)
+
+> **Modular non-Python REPL engines for DSPy Recursive Language Models.**
 
 `dspy-repl` is a modular package for non-Python REPL-based RLM engines compatible with DSPy.
 
@@ -176,7 +183,7 @@ Each run creates a timestamped directory under `save_dir` with:
 
 To inspect one execution deeply, start with a trajectory file and then correlate with the same sample in `results.jsonl` and `benchmark.log`.
 
-Full benchmark usage guide: `docs/BENCHMARKS.md`.
+Full benchmark usage guide: `BENCHMARKS.md`.
 
 ## Local validation before release
 
@@ -185,6 +192,4 @@ python -m build
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q
 python -m twine check --strict dist/*
 ```
-
-Release guide: `docs/RELEASING.md`.
 
