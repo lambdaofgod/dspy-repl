@@ -1,0 +1,87 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/dspy_repl/interpreters/*.scm",
+    "src/dspy_repl/interpreters/*.ghci",
+    "src/dspy_repl/**/*.py",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "docs/*.md",
+    "tests/*.py",
+]
+
+[project]
+name = "dspy-repl"
+version = "0.1.0"
+description = "Modular non-Python REPL engines for DSPy Recursive Language Models"
+readme = "README.md"
+authors = [{ name = "Michael Pavlukhin", email = "michael@pavlukhinlab.com" }]
+license = { text = "MIT" }
+requires-python = ">=3.10,<3.15"
+dependencies = [
+    "dspy>=3.0.0",
+    "pydantic>=2.0.0",
+]
+keywords = ["dspy", "rlm", "repl", "scheme", "sql", "haskell", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.8.0",
+    "mypy>=1.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Archelunch/dspy-repl"
+Repository = "https://github.com/Archelunch/dspy-repl"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dspy_repl"]
+include = [
+    "src/dspy_repl/interpreters/*.scm",
+    "src/dspy_repl/interpreters/*.ghci",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+[tool.coverage.run]
+relative_files = true
+source = ["src"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "N", "Q", "RUF"]
+ignore = ["E501", "N802", "N803", "N806", "RUF005", "RUF022", "UP035"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+disallow_untyped_defs = false

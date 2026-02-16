@@ -1,0 +1,79 @@
+-- dspy_haskell_prelude.ghci
+-- Helpers loaded into GHCi by HaskellInterpreter.
+
+import System.IO (hFlush, stdout)
+import Data.List (intercalate)
+import Control.Exception (ioError)
+import System.IO.Unsafe (unsafePerformIO)
+
+-- Marker protocol understood by Python host.
+dspyToolCallPrefix :: String
+dspyToolCallPrefix = "__DSPY_TOOL_CALL__"
+
+dspySubmitPrefix :: String
+dspySubmitPrefix = "__DSPY_SUBMIT__"
+
+dspySubmitSignal :: String
+dspySubmitSignal = "__DSPY_SUBMIT_SIGNAL__"
+
+dspyEscapeChar :: Char -> String
+dspyEscapeChar c = case c of
+  '"'  -> "\\\""
+  '\\' -> "\\\\"
+  '\n' -> "\\n"
+  '\r' -> "\\r"
+  '\t' -> "\\t"
+  _    -> [c]
+
+dspyEncodeString :: String -> String
+dspyEncodeString s = "\"" ++ concatMap dspyEscapeChar s ++ "\""
+
+dspyEncodeStringArray :: [String] -> String
+dspyEncodeStringArray xs = "[" ++ intercalate "," (map dspyEncodeString xs) ++ "]"
+
+dspyEncodeObject :: [(String, String)] -> String
+dspyEncodeObject fields =
+  "{" ++ intercalate "," [dspyEncodeString k ++ ":" ++ v | (k, v) <- fields] ++ "}"
+
+dspyRenderValue :: Show a => a -> String
+dspyRenderValue x =
+  case show x of
+    "True" -> "true"
+    "False" -> "false"
+    "()" -> "null"
+    other -> other
+
+dspyEmitToolCall :: String -> [String] -> IO ()
+dspyEmitToolCall toolName args = do
+  let payload = dspyEncodeObject
+        [ ("name", dspyEncodeString toolName)
+        , ("args", dspyEncodeStringArray args)
+        ]
+  putStrLn (dspyToolCallPrefix ++ payload)
+  hFlush stdout
+
+dspySubmit :: [(String, String)] -> IO a
+dspySubmit fields = do
+  putStrLn (dspySubmitPrefix ++ dspyEncodeObject fields)
+  hFlush stdout
+  ioError (userError dspySubmitSignal)
+
+llmQuery :: String -> IO String
+llmQuery prompt = do
+  dspyEmitToolCall "llmQuery" [prompt]
+  getLine
+
+llmQueryBatched :: [String] -> IO [String]
+llmQueryBatched prompts = mapM llmQuery prompts
+
+-- Pure helpers for expression-style REPL code.
+{-# NOINLINE llmQueryPure #-}
+llmQueryPure :: String -> String
+llmQueryPure prompt = unsafePerformIO (llmQuery prompt)
+
+llmQueryBatchedPure :: [String] -> [String]
+llmQueryBatchedPure prompts = map llmQueryPure prompts
+
+-- Default single-output submit. The host can override this with a typed version.
+submit :: Show a => a -> IO b
+submit output = dspySubmit [("output", dspyRenderValue output)]
