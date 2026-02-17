@@ -11,6 +11,42 @@ Run it with:
 python -m dspy_repl.benchmarks.oolong_runner --model "gemini/gemini-3-flash-preview" --languages "scheme,sql"
 ```
 
+## Oolong-Pairs Runner
+
+`dspy-repl` includes an OOLONG-Pairs runner that evaluates pairwise user-ID
+aggregation tasks (F1 scoring over predicted pairs).
+
+Run it with:
+
+```bash
+python -m dspy_repl.benchmarks.oolong_pairs_runner --model "gemini/gemini-3-flash-preview" --languages "sql,scheme,js" --max-samples 20
+```
+
+The runner uses the same artifact format as OOLONG and writes full
+trajectories per engine/sample.
+
+## S-NIAH Runner
+
+`dspy-repl` includes a synthetic Single Needle-In-A-Haystack runner for
+long-context retrieval scaling.
+
+Run it with:
+
+```bash
+python -m dspy_repl.benchmarks.niah_runner --languages "python,sql,scheme" --num-tasks 50 --context-lengths "8192,32768,131072"
+```
+
+S-NIAH supports:
+
+- `--num-tasks` tasks per context length
+- `--context-lengths` comma-separated token lengths
+- `--max-samples` is applied per context length (set `0` to disable cap)
+
+In addition to default run artifacts, S-NIAH writes:
+
+- `summary_by_context_length.json`
+- `by_engine_context_length.csv`
+
 ## Configuration
 
 You can provide configuration via CLI flags or an optional JSON config file.
@@ -38,6 +74,10 @@ Example config file:
     "max_llm_calls": 20,
     "engine_timeout_seconds": 240,
     "verbose": false
+  },
+  "niah_dataset": {
+    "num_tasks": 50,
+    "context_lengths": [8192, 16384, 32768, 65536, 131072, 262144]
   },
   "parallel": {
     "enabled": true,
@@ -109,3 +149,42 @@ Each run creates a timestamped directory under `save_dir`, including:
 
 This layout makes it easy to debug failures, inspect trajectories, and compare
 language performance across runs.
+
+## Analytics and Report Generation
+
+Generate a polished single-file HTML report with tables, Plotly charts, and
+auto-generated insights:
+
+```bash
+python -m dspy_repl.benchmarks.report_runner --run-dir benchmark_results/<run_id>
+```
+
+Compare multiple runs:
+
+```bash
+python -m dspy_repl.benchmarks.report_runner --run-dirs benchmark_results/<id1>,benchmark_results/<id2>
+```
+
+Use latest runs from `benchmark_results`:
+
+```bash
+python -m dspy_repl.benchmarks.report_runner --latest 5
+```
+
+By default, reports are written to:
+
+- `benchmark_results/reports/report_<timestamp>.html`
+
+You can override output:
+
+```bash
+python -m dspy_repl.benchmarks.report_runner --latest 3 --output benchmark_results/reports/my_report.html
+```
+
+The report includes:
+
+- Engine comparison table (sortable in browser)
+- Score / latency / success-rate charts
+- Score-vs-latency frontier chart
+- S-NIAH degradation curves (when `summary_by_context_length.json` is available)
+- Deterministic insight bullets about winners, tradeoffs, and stability

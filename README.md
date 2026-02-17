@@ -154,6 +154,30 @@ Run benchmarks:
 python -m dspy_repl.benchmarks.oolong_runner --model "gemini/gemini-3-flash-preview" --languages "python,scheme,sql,haskell"
 ```
 
+Run OOLONG-Pairs benchmarks:
+
+```bash
+python -m dspy_repl.benchmarks.oolong_pairs_runner --model "gemini/gemini-3-flash-preview" --languages "sql,scheme,js" --max-samples 20
+```
+
+Run S-NIAH synthetic scaling benchmarks:
+
+```bash
+python -m dspy_repl.benchmarks.niah_runner --languages "python,sql,scheme" --num-tasks 50 --context-lengths "8192,32768,131072"
+```
+
+Generate a single HTML analytics report (tables + Plotly charts + insights):
+
+```bash
+python -m dspy_repl.benchmarks.report_runner --run-dir benchmark_results/<run_id>
+```
+
+Compare several runs in one report:
+
+```bash
+python -m dspy_repl.benchmarks.report_runner --run-dirs benchmark_results/<id1>,benchmark_results/<id2>
+```
+
 ### Multiprocessing
 
 By default, selected languages run in parallel per sample using `multiprocessing`.
@@ -205,6 +229,6 @@ python -m twine check --strict dist/*
 
 - Add shared context with PostgreSQL/MySQL.
 - Test shared context in a multi-agent environment.
-- Run more benchmarks.
+- Extend benchmarks with additional long-context suites.
 - Optimize REPL instructions with GEPA.
 
