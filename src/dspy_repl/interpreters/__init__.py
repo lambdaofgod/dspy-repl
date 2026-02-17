@@ -1,6 +1,6 @@
 from typing import Any
 
-__all__ = ["load_haskell_interpreter", "load_js_interpreter", "load_scheme_interpreter", "load_sql_interpreter"]
+__all__ = ["load_deno_interpreter", "load_haskell_interpreter", "load_js_interpreter", "load_scheme_interpreter", "load_sql_interpreter"]
 
 
 def load_scheme_interpreter() -> Any:
@@ -19,6 +19,12 @@ def load_haskell_interpreter() -> Any:
     from dspy_repl.interpreters.haskell_interpreter import HaskellInterpreter
 
     return HaskellInterpreter
+
+
+def load_deno_interpreter() -> Any:
+    from dspy_repl.interpreters.deno_interpreter import DenoInterpreter
+
+    return DenoInterpreter
 
 
 def load_js_interpreter() -> Any:
