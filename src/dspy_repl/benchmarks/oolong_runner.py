@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator, cast
 
-from dspy_repl import SQLRLM, HaskellRLM, SchemeRLM
+from dspy_repl import SQLRLM, HaskellRLM, JavaScriptRLM, SchemeRLM
 from dspy_repl.benchmarks.config import BenchmarkConfig, Language, build_arg_parser, load_benchmark_config
 from dspy_repl.benchmarks.logging_utils import log_event, setup_benchmark_logger
 from dspy_repl.compat import dspy
@@ -119,6 +119,7 @@ def _check_prerequisites() -> dict[Language, bool]:
         "scheme": shutil.which("guile") is not None,
         "haskell": shutil.which("ghci") is not None,
         "sql": True,
+        "js": shutil.which("node") is not None,
     }
 
 
@@ -159,7 +160,7 @@ def resolve_runnable_languages(requested: tuple[Language, ...], logger: logging.
         if available.get(language, False):
             runnable.append(language)
             continue
-        tool_name = {"python": "deno", "scheme": "guile", "haskell": "ghci", "sql": "sqlite"}[language]
+        tool_name = {"python": "deno", "scheme": "guile", "haskell": "ghci", "sql": "sqlite", "js": "node"}[language]
         log_event(logger, "language_skipped_missing_dependency", language=language, dependency=tool_name)
     if not runnable:
         raise RuntimeError("No runnable languages remain after prerequisite checks.")
@@ -199,6 +200,13 @@ def _build_engine(language: Language, signature: str, config: BenchmarkConfig) -
         )
     if language == "sql":
         return SQLRLM(
+            signature,
+            max_iterations=config.run.max_iterations,
+            max_llm_calls=config.run.max_llm_calls,
+            verbose=config.run.verbose,
+        )
+    if language == "js":
+        return JavaScriptRLM(
             signature,
             max_iterations=config.run.max_iterations,
             max_llm_calls=config.run.max_llm_calls,

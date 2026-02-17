@@ -1,9 +1,10 @@
 import dspy_repl
-from dspy_repl import SQLRLM, HaskellRLM, SchemeRLM
+from dspy_repl import HaskellRLM, JavaScriptRLM, SQLRLM, SchemeRLM
 
 
 def test_public_exports() -> None:
     assert SchemeRLM is not None
     assert SQLRLM is not None
     assert HaskellRLM is not None
+    assert JavaScriptRLM is not None
     assert hasattr(dspy_repl, "__version__")

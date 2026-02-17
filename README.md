@@ -16,6 +16,7 @@
   - `SchemeRLM`
   - `SQLRLM`
   - `HaskellRLM`
+  - `JavaScriptRLM`
 - Exposes extension points for adding new REPL languages.
 
 ## Install
@@ -34,7 +35,7 @@ pip install -e ".[dev]"
 
 ```python
 import dspy
-from dspy_repl import SchemeRLM, SQLRLM, HaskellRLM
+from dspy_repl import SchemeRLM, SQLRLM, HaskellRLM, JavaScriptRLM
 
 dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
@@ -42,6 +43,10 @@ scheme_rlm = SchemeRLM("context, query -> answer")
 result = scheme_rlm(context="...", query="...")
 print(result.answer)
 print(result.trajectory)  # step-by-step REPL history
+
+js_rlm = JavaScriptRLM("context, query -> answer")
+js_result = js_rlm(context="...", query="...")
+print(js_result.answer)
 ```
 
 ## Observability and debugging
@@ -69,7 +74,7 @@ At a high level, each RLM run follows this loop:
 
 1. Build REPL variable metadata from inputs.
 2. Generate next action (reasoning + code) from the LM.
-3. Execute code in the target REPL (Scheme/Haskell/SQL).
+3. Execute code in the target REPL (Scheme/Haskell/SQL/JavaScript).
 4. Append `{reasoning, code, output}` to trajectory.
 5. Repeat until final output is submitted or max iterations is reached.
 6. If max iterations is reached, run fallback extraction from accumulated trajectory.
@@ -92,6 +97,7 @@ This loop is shared in `dspy_repl.core.base_rlm` and specialized by language-spe
 - `SQLRLM`: no external runtime (uses Python `sqlite3`)
 - `SchemeRLM`: requires `guile`
 - `HaskellRLM`: requires `ghci` (GHC)
+- `JavaScriptRLM`: requires `node`
 
 ### Install REPL runtimes
 
@@ -100,18 +106,19 @@ If you want to run all REPL-based engines and benchmark comparisons (including P
 - Python REPL engine in benchmarks (`dspy.RLM`): `deno`
 - Scheme REPL engine (`SchemeRLM`): `guile`
 - Haskell REPL engine (`HaskellRLM`): `ghci` from GHC
+- JavaScript REPL engine (`JavaScriptRLM`): `node`
 
 macOS (Homebrew):
 
 ```bash
-brew install deno guile ghc
+brew install deno guile ghc node
 ```
 
 Ubuntu/Debian:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y deno guile-3.0 ghc
+sudo apt-get install -y deno guile-3.0 ghc nodejs npm
 ```
 
 Verify tools are available:
@@ -120,6 +127,7 @@ Verify tools are available:
 deno --version
 guile --version
 ghci --version
+node --version
 ```
 
 ### Python package dependencies for benchmarks
@@ -195,7 +203,6 @@ python -m twine check --strict dist/*
 
 ## Backlog
 
-- Add JavaScript REPL.
 - Add shared context with PostgreSQL/MySQL.
 - Test shared context in a multi-agent environment.
 - Run more benchmarks.

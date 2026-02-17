@@ -6,8 +6,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 
-Language = Literal["python", "scheme", "haskell", "sql"]
-ALL_LANGUAGES: tuple[Language, ...] = ("python", "scheme", "haskell", "sql")
+Language = Literal["python", "scheme", "haskell", "sql", "js"]
+ALL_LANGUAGES: tuple[Language, ...] = ("python", "scheme", "haskell", "sql", "js")
 DEFAULT_MODEL = "gemini/gemini-3-flash-preview"
 
 
@@ -124,7 +124,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--languages",
         default=None,
-        help="Comma-separated languages: python,scheme,haskell,sql",
+        help="Comma-separated languages: python,scheme,haskell,sql,js",
     )
     parser.add_argument("--max-iterations", type=int, default=None, help="Max REPL iterations per run")
     parser.add_argument("--max-llm-calls", type=int, default=None, help="Max sub-LLM calls per run")

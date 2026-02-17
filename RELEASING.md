@@ -25,11 +25,11 @@ python -m twine check --strict dist/*
 ## Publish flow
 
 - TestPyPI dry run (manual): run the `Publish` workflow with `target=testpypi`.
-- Production publish: push a tag like `v0.1.0`.
+- Production publish: push a tag like `v0.2.0`.
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 The tag triggers `publish.yml`, which builds artifacts, validates metadata, then publishes to PyPI via Trusted Publishing.

@@ -22,6 +22,7 @@ from dspy_repl.benchmarks.oolong_runner import (  # type: ignore[import-not-foun
 def test_parse_languages_accepts_csv_and_list() -> None:
     assert parse_languages("scheme,sql") == ("scheme", "sql")
     assert parse_languages(["python", "haskell"]) == ("python", "haskell")
+    assert parse_languages("js") == ("js",)
 
 
 def test_parse_languages_rejects_unknown_values() -> None:
@@ -79,7 +80,7 @@ def test_load_benchmark_config_merges_cli_and_json(tmp_path) -> None:
 def test_resolve_runnable_languages_filters_missing(monkeypatch) -> None:
     monkeypatch.setattr(
         "dspy_repl.benchmarks.oolong_runner._check_prerequisites",
-        lambda: {"python": False, "scheme": True, "haskell": False, "sql": True},
+        lambda: {"python": False, "scheme": True, "haskell": False, "sql": True, "js": True},
     )
     logger = logging.getLogger("test.resolve.languages")
     languages = resolve_runnable_languages(("python", "scheme", "sql"), logger)
