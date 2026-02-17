@@ -272,7 +272,11 @@ class JavaScriptInterpreter:
     def _register_host_state(self) -> None:
         tool_names = tuple(sorted(self.tools.keys()))
         submit_fields = tuple(str(field["name"]) for field in (self.output_fields or []) if "name" in field)
-        if self._tools_registered and tool_names == self._registered_tool_names and submit_fields == self._registered_submit_fields:
+        if (
+            self._tools_registered
+            and tool_names == self._registered_tool_names
+            and submit_fields == self._registered_submit_fields
+        ):
             return
         self._send_json(
             {
@@ -323,7 +327,9 @@ class JavaScriptInterpreter:
                     future.cancel()
                     duration_s = time.monotonic() - start
                     ok = False
-                    result_payload = f"{_TOOL_TIMEOUT_PREFIX} Tool '{tool_name}' exceeded {self.tool_call_timeout_s:.1f}s"
+                    result_payload = (
+                        f"{_TOOL_TIMEOUT_PREFIX} Tool '{tool_name}' exceeded {self.tool_call_timeout_s:.1f}s"
+                    )
                     response_text = str(result_payload)
                     logger.warning(
                         "JavaScriptInterpreter tool call timeout name=%s elapsed=%.3fs timeout=%.1fs",
@@ -363,7 +369,15 @@ class JavaScriptInterpreter:
         if isinstance(result_payload, str) and len(result_payload) > _MAX_TOOL_RESPONSE_CHARS:
             result_payload = result_payload[:_MAX_TOOL_RESPONSE_CHARS] + "\n... (truncated tool response) ..."
 
-        self._send_json({"type": "tool_result", "id": call_id, "ok": ok, "result": result_payload, "error": None if ok else result_payload})
+        self._send_json(
+            {
+                "type": "tool_result",
+                "id": call_id,
+                "ok": ok,
+                "result": result_payload,
+                "error": None if ok else result_payload,
+            }
+        )
 
     def _read_until_marker(self, *, timeout_seconds: float) -> tuple[list[str], dict[str, Any] | None, list[str]]:
         lines: list[str] = []

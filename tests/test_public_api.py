@@ -1,5 +1,5 @@
 import dspy_repl
-from dspy_repl import HaskellRLM, JavaScriptRLM, SQLRLM, SchemeRLM
+from dspy_repl import SQLRLM, HaskellRLM, JavaScriptRLM, SchemeRLM
 
 
 def test_public_exports() -> None:
