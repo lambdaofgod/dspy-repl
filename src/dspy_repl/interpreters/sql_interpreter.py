@@ -178,10 +178,18 @@ class SQLInterpreter:
 
     def _call_tool_with_timeout(self, fn: Callable[..., Any], args: tuple[Any, ...]) -> Any:
         result_queue: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
+        cancel_event = threading.Event()
 
         def worker() -> None:
             try:
-                result_queue.put((True, fn(*args)))
+                params = inspect.signature(fn).parameters
+                if "cancel_event" in params:
+                    result = fn(*args, cancel_event=cancel_event)
+                elif "_cancel_event" in params:
+                    result = fn(*args, _cancel_event=cancel_event)
+                else:
+                    result = fn(*args)
+                result_queue.put((True, result))
             except Exception as exc:
                 result_queue.put((False, exc))
 
@@ -189,6 +197,7 @@ class SQLInterpreter:
         thread.start()
         thread.join(self.tool_timeout_seconds)
         if thread.is_alive():
+            cancel_event.set()
             raise TimeoutError(f"Tool call timed out after {self.tool_timeout_seconds:.1f}s.")
         ok, payload = result_queue.get_nowait()
         if ok:

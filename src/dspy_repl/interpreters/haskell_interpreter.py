@@ -4,17 +4,18 @@ Local interpreter for Haskell code execution using GHCi.
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import json
 import logging
 import os
+import queue
 import re
 import select
+import signal
 import subprocess
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any, Callable
 
 from dspy_repl.core.code_interpreter import SIMPLE_TYPES, CodeInterpreterError, FinalOutput
@@ -125,6 +126,7 @@ class HaskellInterpreter:
                 encoding="UTF-8",
                 env=os.environ.copy(),
                 bufsize=1,
+                start_new_session=True,
             )
         except FileNotFoundError as e:
             install_instructions = (
@@ -170,8 +172,57 @@ class HaskellInterpreter:
 
     def _write_line(self, line: str) -> None:
         assert self._process is not None and self._process.stdin is not None
-        self._process.stdin.write(line + "\n")
-        self._process.stdin.flush()
+        try:
+            self._process.stdin.write(line + "\n")
+            self._process.stdin.flush()
+        except (BrokenPipeError, OSError) as e:
+            self._terminate_process()
+            raise CodeInterpreterError(f"GHCi process is unavailable while sending input: {e}") from e
+
+    def _terminate_process(self) -> None:
+        if self._process is None:
+            return
+        if self._process.poll() is not None:
+            return
+        try:
+            os.killpg(self._process.pid, signal.SIGTERM)
+            self._process.wait(timeout=2)
+        except Exception:
+            try:
+                os.killpg(self._process.pid, signal.SIGKILL)
+            except Exception:
+                self._process.kill()
+            with contextlib.suppress(Exception):
+                self._process.wait(timeout=2)
+
+    def _call_tool_with_timeout(self, fn: Callable[..., Any], args: list[Any]) -> Any:
+        result_queue: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
+        cancel_event = threading.Event()
+
+        def worker() -> None:
+            try:
+                sig = inspect.signature(fn)
+                params = sig.parameters
+                if "cancel_event" in params:
+                    result = fn(*args, cancel_event=cancel_event)
+                elif "_cancel_event" in params:
+                    result = fn(*args, _cancel_event=cancel_event)
+                else:
+                    result = fn(*args)
+                result_queue.put((True, result))
+            except Exception as exc:
+                result_queue.put((False, exc))
+
+        thread = threading.Thread(target=worker, name="haskell-tool-call", daemon=True)
+        thread.start()
+        thread.join(self.tool_call_timeout_s)
+        if thread.is_alive():
+            cancel_event.set()
+            raise TimeoutError(f"Tool call timed out after {self.tool_call_timeout_s:.1f}s.")
+        ok, payload = result_queue.get_nowait()
+        if ok:
+            return payload
+        raise payload
 
     def _readline_with_timeout(self, timeout_seconds: float, context: str) -> str:
         assert self._process is not None and self._process.stdout is not None
@@ -378,33 +429,25 @@ class HaskellInterpreter:
             )
             start = time.monotonic()
             try:
-                executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="haskell-tool-call")
-                try:
-                    future = executor.submit(self.tools[tool_name], *args)
-                    try:
-                        result = future.result(timeout=self.tool_call_timeout_s)
-                    except FutureTimeoutError:
-                        future.cancel()
-                        duration_s = time.monotonic() - start
-                        response = f"{_TOOL_TIMEOUT_PREFIX} Tool '{tool_name}' exceeded {self.tool_call_timeout_s:.1f}s"
-                        logger.warning(
-                            "HaskellInterpreter tool call timeout name=%s elapsed=%.3fs timeout=%.1fs",
-                            tool_name,
-                            duration_s,
-                            self.tool_call_timeout_s,
-                        )
-                    else:
-                        response = (
-                            json.dumps(result, ensure_ascii=False)
-                            if isinstance(result, (list, dict))
-                            else str(result if result is not None else "")
-                        )
-                finally:
-                    executor.shutdown(wait=False, cancel_futures=True)
+                result = self._call_tool_with_timeout(self.tools[tool_name], args)
+            except TimeoutError:
+                duration_s = time.monotonic() - start
+                response = f"{_TOOL_TIMEOUT_PREFIX} Tool '{tool_name}' exceeded {self.tool_call_timeout_s:.1f}s"
+                logger.warning(
+                    "HaskellInterpreter tool call timeout name=%s elapsed=%.3fs timeout=%.1fs",
+                    tool_name,
+                    duration_s,
+                    self.tool_call_timeout_s,
+                )
             except Exception as e:
                 response = f"[ERROR] {e}"
                 logger.warning("HaskellInterpreter tool call error name=%s err=%s", tool_name, e)
             else:
+                response = (
+                    json.dumps(result, ensure_ascii=False)
+                    if isinstance(result, (list, dict))
+                    else str(result if result is not None else "")
+                )
                 duration_s = time.monotonic() - start
                 response_len = len(response)
                 if duration_s >= self.log_slow_tool_calls_s:
@@ -435,8 +478,10 @@ class HaskellInterpreter:
         self._drain_stderr()
 
         full_code = self._normalize_submit_calls(self._inject_variables(code, variables or {}))
+        self._write_line(":{")
         for line in full_code.splitlines():
             self._write_line(line)
+        self._write_line(":}")
         self._write_line(f'putStrLn "{_COMMAND_END_MARKER}"')
 
         output_lines, final_output = self._read_until_marker(
@@ -465,8 +510,7 @@ class HaskellInterpreter:
                 self._write_line(":quit")
                 self._process.wait(timeout=5)
             except Exception:
-                self._process.kill()
-                self._process.wait()
+                self._terminate_process()
         self._process = None
         self._owner_thread = None
         self._stderr_thread = None

@@ -4,7 +4,6 @@
 import System.IO (hFlush, stdout)
 import Data.List (intercalate)
 import Control.Exception (ioError)
-import System.IO.Unsafe (unsafePerformIO)
 
 -- Marker protocol understood by Python host.
 dspyToolCallPrefix :: String
@@ -65,14 +64,6 @@ llmQuery prompt = do
 
 llmQueryBatched :: [String] -> IO [String]
 llmQueryBatched prompts = mapM llmQuery prompts
-
--- Pure helpers for expression-style REPL code.
-{-# NOINLINE llmQueryPure #-}
-llmQueryPure :: String -> String
-llmQueryPure prompt = unsafePerformIO (llmQuery prompt)
-
-llmQueryBatchedPure :: [String] -> [String]
-llmQueryBatchedPure prompts = map llmQueryPure prompts
 
 -- Default single-output submit. The host can override this with a typed version.
 submit :: Show a => a -> IO b

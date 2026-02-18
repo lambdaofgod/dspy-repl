@@ -61,6 +61,9 @@ IMPORTANT: This is ITERATIVE.
 3. VERIFY BEFORE SUBMITTING - if results look wrong, revise.
 4. USE llmQuery FOR SEMANTICS where needed.
 5. SUBMIT ONLY AFTER SEEING OUTPUTS.
+6. NEVER use infinite lists without take; always bound list processing.
+7. For multi-line logic, prefer do blocks and end observable checks with putStrLn.
+8. llmQuery and llmQueryBatched are IO; only call them inside IO/do flows.
 
 You have max {max_llm_calls} sub-LLM calls. When done, call submit with your output."""
 

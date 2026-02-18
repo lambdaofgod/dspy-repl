@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 import shutil
-import signal
 import sys
+import threading
 import time
 import warnings
-from concurrent.futures import Future, ProcessPoolExecutor, as_completed
+from concurrent.futures import Future, ProcessPoolExecutor, TimeoutError as FutureTimeoutError
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
@@ -204,23 +204,42 @@ def _build_engine(language: Language, signature: str, config: BenchmarkConfig) -
     raise ValueError(f"Unknown language: {language}")
 
 
-@contextmanager
-def _time_limit(seconds: int, *, language: Language, sample_id: str) -> Iterator[None]:
-    if seconds <= 0 or not hasattr(signal, "SIGALRM"):
-        yield
-        return
+def _run_engine_with_timeout(
+    *,
+    engine: Any,
+    inputs: dict[str, Any],
+    timeout_seconds: int,
+    language: Language,
+    sample_id: str,
+) -> Any:
+    if timeout_seconds <= 0:
+        return engine(**inputs)
 
-    def _timeout_handler(signum: int, frame: Any) -> None:  # pragma: no cover
-        raise TimeoutError(f"Language '{language}' timed out after {seconds}s on sample '{sample_id}'.")
+    result_box: dict[str, Any] = {}
+    error_box: dict[str, BaseException] = {}
+    finished = threading.Event()
 
-    previous = signal.getsignal(signal.SIGALRM)
-    signal.signal(signal.SIGALRM, _timeout_handler)
-    signal.alarm(seconds)
-    try:
-        yield
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, previous)
+    def _invoke() -> None:
+        try:
+            result_box["result"] = engine(**inputs)
+        except BaseException as exc:  # pragma: no cover - depends on runtime errors
+            error_box["error"] = exc
+        finally:
+            finished.set()
+
+    worker = threading.Thread(target=_invoke, name=f"engine-runner-{language}-{sample_id}", daemon=True)
+    worker.start()
+    if not finished.wait(timeout_seconds):
+        shutdown_fn = getattr(engine, "shutdown", None)
+        if callable(shutdown_fn):
+            try:
+                shutdown_fn()
+            except Exception:
+                pass
+        raise TimeoutError(f"Language '{language}' timed out after {timeout_seconds}s on sample '{sample_id}'.")
+    if "error" in error_box:
+        raise error_box["error"]
+    return result_box.get("result")
 
 
 def execute_task(
@@ -239,8 +258,13 @@ def execute_task(
         with _suppress_known_pydantic_serializer_warning():
             engine = _build_engine(language, signature, config)
             start = time.time()
-            with _time_limit(config.run.engine_timeout_seconds, language=language, sample_id=sample_id):
-                result = engine(**inputs)
+            result = _run_engine_with_timeout(
+                engine=engine,
+                inputs=inputs,
+                timeout_seconds=config.run.engine_timeout_seconds,
+                language=language,
+                sample_id=sample_id,
+            )
         elapsed_seconds = round(time.time() - start, 2)
 
         output_field = next(iter(dspy.Signature(signature).output_fields.keys()))  # type: ignore[attr-defined]
@@ -325,10 +349,23 @@ def _run_task_across_languages(
         for language in languages
     }
     ordered_results: dict[Language, TaskResult] = {}
-    for finished in as_completed(futures_by_lang.values()):
-        language = next(lang for lang, fut in futures_by_lang.items() if fut is finished)
+    worker_timeout_s = float(config.run.engine_timeout_seconds) + 5.0
+    for language, future in futures_by_lang.items():
         try:
-            ordered_results[language] = finished.result()
+            ordered_results[language] = future.result(timeout=worker_timeout_s)
+        except FutureTimeoutError:
+            future.cancel()
+            ordered_results[language] = TaskResult(
+                sample_id=sample_id,
+                task_name=str(task.get("name", sample_id)),
+                engine=language,
+                answer="",
+                iterations=0,
+                elapsed_seconds=float(config.run.engine_timeout_seconds),
+                success=False,
+                expected=str(task.get("expected")) if task.get("expected") is not None else None,
+                error=f"Worker timeout after {worker_timeout_s:.1f}s",
+            )
         except Exception as exc:  # pragma: no cover - process/runtime failures
             ordered_results[language] = TaskResult(
                 sample_id=sample_id,
@@ -389,11 +426,25 @@ def run_benchmark(
 
     results: list[TaskResult] = []
     incremental_path = run_dir / "incremental_results.jsonl"
+    consecutive_failures: dict[Language, int] = {language: 0 for language in languages}
+    active_languages: list[Language] = list(languages)
+    failure_threshold = 3
 
     max_workers = config.parallel.max_workers if config.parallel.max_workers is not None else len(languages)
     with ProcessPoolExecutor(max_workers=max_workers) if config.parallel.enabled else nullcontext() as executor:
         process_executor = cast(ProcessPoolExecutor | None, executor)
         for task_index, task in enumerate(tasks, start=1):
+            task_languages = [
+                language for language in active_languages if consecutive_failures.get(language, 0) < failure_threshold
+            ]
+            if not task_languages:
+                log_event(
+                    logger,
+                    "benchmark_early_stop_all_languages_skipped",
+                    reason=f"all languages reached {failure_threshold} consecutive failures",
+                )
+                break
+
             task_id = str(task.get("id", f"task_{task_index}"))
             log_event(
                 logger,
@@ -402,10 +453,11 @@ def run_benchmark(
                 total_tasks=len(tasks),
                 sample_id=task_id,
                 task_name=task.get("name"),
+                languages=task_languages,
             )
             task_results = _run_task_across_languages(
                 task=task,
-                languages=languages,
+                languages=task_languages,
                 config=config,
                 logger=logger,
                 executor=process_executor,
@@ -427,6 +479,18 @@ def run_benchmark(
                 if config.artifacts.incremental_save:
                     with incremental_path.open("a", encoding="utf-8") as fh:
                         fh.write(json.dumps(result.to_record(), ensure_ascii=False) + "\n")
+                if result.success:
+                    consecutive_failures[result.engine] = 0
+                else:
+                    consecutive_failures[result.engine] = consecutive_failures.get(result.engine, 0) + 1
+                    if consecutive_failures[result.engine] == failure_threshold:
+                        log_event(
+                            logger,
+                            "language_circuit_breaker_open",
+                            language=result.engine,
+                            threshold=failure_threshold,
+                            sample_id=result.sample_id,
+                        )
 
     run_config = {
         "run_id": run_id,
