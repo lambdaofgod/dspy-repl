@@ -19,8 +19,12 @@ def _aggregate_by_engine(derived_rows: list[dict[str, Any]]) -> list[dict[str, A
                 "engine": engine,
                 "avg_score": sum(float(row.get("avg_score", 0.0)) for row in rows) / count if count else 0.0,
                 "success_rate": sum(float(row.get("success_rate", 0.0)) for row in rows) / count if count else 0.0,
-                "avg_latency_seconds": sum(float(row.get("avg_latency_seconds", 0.0)) for row in rows) / count if count else 0.0,
-                "score_per_second": sum(float(row.get("score_per_second", 0.0)) for row in rows) / count if count else 0.0,
+                "avg_latency_seconds": sum(float(row.get("avg_latency_seconds", 0.0)) for row in rows) / count
+                if count
+                else 0.0,
+                "score_per_second": sum(float(row.get("score_per_second", 0.0)) for row in rows) / count
+                if count
+                else 0.0,
             }
         )
     return sorted(result, key=lambda row: row["engine"])
@@ -40,31 +44,28 @@ def _build_table_html(derived_rows: list[dict[str, Any]]) -> str:
         ("timeout_rate", "Timeout Rate"),
     ]
 
-    head = "".join(
-        f"<th onclick=\"sortTable('{key}')\" data-key=\"{key}\">{label}</th>"
-        for key, label in headers
-    )
+    head = "".join(f'<th onclick="sortTable(\'{key}\')" data-key="{key}">{label}</th>' for key, label in headers)
     body_rows: list[str] = []
     for row in derived_rows:
         body_rows.append(
             "<tr>"
-            f"<td>{row.get('run_id','')}</td>"
-            f"<td>{row.get('dataset','')}</td>"
-            f"<td>{row.get('engine','')}</td>"
-            f"<td>{float(row.get('avg_score',0.0)):.4f}</td>"
-            f"<td>{float(row.get('success_rate',0.0)):.2%}</td>"
-            f"<td>{float(row.get('avg_latency_seconds',0.0)):.2f}</td>"
-            f"<td>{float(row.get('avg_iterations',0.0)):.2f}</td>"
-            f"<td>{float(row.get('score_per_second',0.0)):.4f}</td>"
-            f"<td>{float(row.get('failure_rate',0.0)):.2%}</td>"
-            f"<td>{float(row.get('timeout_rate',0.0)):.2%}</td>"
+            f"<td>{row.get('run_id', '')}</td>"
+            f"<td>{row.get('dataset', '')}</td>"
+            f"<td>{row.get('engine', '')}</td>"
+            f"<td>{float(row.get('avg_score', 0.0)):.4f}</td>"
+            f"<td>{float(row.get('success_rate', 0.0)):.2%}</td>"
+            f"<td>{float(row.get('avg_latency_seconds', 0.0)):.2f}</td>"
+            f"<td>{float(row.get('avg_iterations', 0.0)):.2f}</td>"
+            f"<td>{float(row.get('score_per_second', 0.0)):.4f}</td>"
+            f"<td>{float(row.get('failure_rate', 0.0)):.2%}</td>"
+            f"<td>{float(row.get('timeout_rate', 0.0)):.2%}</td>"
             "</tr>"
         )
     return f"""
 <table id="metrics-table">
   <thead><tr>{head}</tr></thead>
   <tbody>
-    {''.join(body_rows)}
+    {"".join(body_rows)}
   </tbody>
 </table>
 """
@@ -188,7 +189,7 @@ def render_html_report(analysis: dict[str, Any], output_path: Path) -> Path:
   <div class="cards">
     <div class="card"><strong>Rows analyzed</strong><div>{total_rows}</div></div>
     <div class="card"><strong>Average success rate</strong><div>{avg_success:.2%}</div></div>
-    <div class="card"><strong>Top score</strong><div>{(top['engine'] + ' @ ' + top['dataset']) if top else 'n/a'}</div></div>
+    <div class="card"><strong>Top score</strong><div>{(top["engine"] + " @ " + top["dataset"]) if top else "n/a"}</div></div>
   </div>
 
   <h2>Key Insights</h2>

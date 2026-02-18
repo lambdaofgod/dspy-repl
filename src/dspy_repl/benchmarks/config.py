@@ -103,7 +103,9 @@ def parse_languages(raw: str | list[str] | tuple[str, ...] | None) -> tuple[Lang
     return tuple(selected)
 
 
-def parse_context_lengths(raw: str | list[int] | tuple[int, ...] | list[str] | tuple[str, ...] | None) -> tuple[int, ...]:
+def parse_context_lengths(
+    raw: str | list[int] | tuple[int, ...] | list[str] | tuple[str, ...] | None,
+) -> tuple[int, ...]:
     if raw is None:
         return DEFAULT_NIAH_CONTEXT_LENGTHS
 

@@ -39,7 +39,7 @@ def setup_runtime_logger(*, verbose: bool, log_file: Path | None = None) -> logg
             file_handler.setLevel(logging.DEBUG)
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
-        setattr(logger, "_dspy_repl_runtime_log_file", desired_log_file)
+        logger._dspy_repl_runtime_log_file = desired_log_file
     else:
         for handler in logger.handlers:
             if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):

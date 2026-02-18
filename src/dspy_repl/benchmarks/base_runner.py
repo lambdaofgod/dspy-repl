@@ -6,7 +6,8 @@ import sys
 import threading
 import time
 import warnings
-from concurrent.futures import Future, ProcessPoolExecutor, TimeoutError as FutureTimeoutError
+from concurrent.futures import Future, ProcessPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,7 +17,6 @@ from dspy_repl import SQLRLM, HaskellRLM, JavaScriptRLM, SchemeRLM
 from dspy_repl.benchmarks.config import BenchmarkConfig, Language
 from dspy_repl.benchmarks.logging_utils import log_event, setup_benchmark_logger, setup_runtime_logger
 from dspy_repl.compat import dspy
-
 
 ScoreFn = Callable[[str, str], float]
 TaskLoaderFn = Callable[[BenchmarkConfig], list[dict[str, Any]]]

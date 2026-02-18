@@ -160,7 +160,9 @@ def generate_insights(derived_rows: list[dict[str, Any]]) -> list[str]:
     unstable = [
         row
         for row in derived_rows
-        if row.get("timeout_rate", 0.0) > 0.10 or row.get("failure_rate", 0.0) > 0.20 or row.get("avg_error_steps", 0.0) > 1.0
+        if row.get("timeout_rate", 0.0) > 0.10
+        or row.get("failure_rate", 0.0) > 0.20
+        or row.get("avg_error_steps", 0.0) > 1.0
     ]
     if unstable:
         names = ", ".join(sorted({f"{row['engine']}@{row['dataset']}" for row in unstable}))
