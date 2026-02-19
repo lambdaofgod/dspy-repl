@@ -11,7 +11,9 @@ from __future__ import annotations
 import inspect
 import json
 import keyword
+import os
 import queue
+import re
 import sqlite3
 import threading
 import time
@@ -36,11 +38,15 @@ class SQLInterpreter:
         max_display_rows: int = 200,
         statement_timeout_seconds: float = 30.0,
         tool_timeout_seconds: float = 45.0,
+        preload_sql: str | None = None,
+        skip_variable_tables: set[str] | None = None,
     ) -> None:
         self.db_path = db_path
         self.tools = dict(tools) if tools else {}
         self.output_fields = output_fields
         self.connection_factory = connection_factory or sqlite3.connect
+        self._preload_sql = preload_sql
+        self._skip_variable_tables: set[str] = set(skip_variable_tables) if skip_variable_tables else set()
         self.auto_indexes = auto_indexes
         self.index_candidates = index_candidates or (
             "id",
@@ -96,9 +102,38 @@ class SQLInterpreter:
             self._conn.execute("PRAGMA temp_store = MEMORY")
             self._conn.execute("PRAGMA cache_size = -64000")
             self._conn.execute("PRAGMA synchronous = NORMAL")
+            self._run_preload_sql()
             self._register_builtin_functions()
             self._register_tool_functions()
         return self._conn
+
+    def _discover_existing_tables(self) -> None:
+        """Register all user tables from sqlite_master into _tables_created."""
+        assert self._conn is not None
+        cursor = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        )
+        for row in cursor:
+            self._tables_created.add(row[0])
+        self._table_generation += 1
+
+    def _run_preload_sql(self) -> None:
+        if not self._preload_sql:
+            return
+        assert self._conn is not None
+        existing = self._conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchone()
+        if existing and existing[0] > 0:
+            self._discover_existing_tables()
+            return
+        sql = self._preload_sql
+        if os.path.isfile(sql):
+            with open(sql) as f:
+                sql = f.read()
+        self._conn.executescript(sql)
+        self._conn.commit()
+        self._discover_existing_tables()
 
     def start(self) -> None:
         self._ensure_connection()
@@ -276,6 +311,8 @@ class SQLInterpreter:
         self._validate_identifier(name)
         if name in self._tables_created:
             return
+        if name in self._skip_variable_tables:
+            return
 
         value = self._try_parse_json_string(raw_value)
         conn = self._ensure_connection()
@@ -382,6 +419,8 @@ class SQLInterpreter:
         if len(self._tables_created) > before:
             conn.commit()
 
+    _CHECK_RE = re.compile(r"CHECK\s*\(((?:[^()]*|\([^()]*\))*)\)", re.IGNORECASE)
+
     def describe_tables(self, table_names: list[str] | None = None) -> list[dict[str, Any]]:
         started = time.perf_counter()
         conn = self._ensure_connection()
@@ -396,7 +435,27 @@ class SQLInterpreter:
             cols = cursor.execute(f"PRAGMA table_info({ident})").fetchall()
             col_defs = [f"{row['name']} {row['type'] or 'TEXT'}" for row in cols]
             row_count = cursor.execute(f"SELECT COUNT(*) AS c FROM {ident}").fetchone()
-            descriptions.append({"name": name, "columns": col_defs, "rows": int(row_count["c"]) if row_count else 0})
+
+            fks = cursor.execute(f"PRAGMA foreign_key_list({ident})").fetchall()
+            fk_info = [f"{row['from']} -> {row['table']}.{row['to']}" for row in fks]
+
+            check_constraints: list[str] = []
+            create_row = cursor.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (name,)
+            ).fetchone()
+            if create_row and create_row["sql"]:
+                check_constraints = self._CHECK_RE.findall(create_row["sql"])
+
+            desc: dict[str, Any] = {
+                "name": name,
+                "columns": col_defs,
+                "rows": int(row_count["c"]) if row_count else 0,
+            }
+            if fk_info:
+                desc["foreign_keys"] = fk_info
+            if check_constraints:
+                desc["checks"] = check_constraints
+            descriptions.append(desc)
         self._profile["describe_seconds"] += time.perf_counter() - started
         return descriptions
 
