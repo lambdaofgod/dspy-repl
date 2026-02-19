@@ -49,6 +49,103 @@ js_result = js_rlm(context="...", query="...")
 print(js_result.answer)
 ```
 
+## SQLRLM
+
+`SQLRLM` uses Python's built-in `sqlite3` as its REPL environment -- no external runtime needed. The LLM writes SQL to explore data, call tools, and produce results.
+
+### Basic usage
+
+```python
+import dspy
+from dspy_repl import SQLRLM
+
+dspy.configure(lm=dspy.LM("openai/gpt-4o"))
+
+rlm = SQLRLM("context, query -> answer")
+result = rlm(context="...", query="...")
+print(result.answer)
+```
+
+### Pre-loaded schemas
+
+When working with relational data, you can pre-load a SQL schema so the LLM sees the table structure from iteration 1 instead of spending iterations writing `CREATE TABLE` statements:
+
+```python
+rlm = SQLRLM(
+    "query -> answer",
+    preload_sql="schema.sql",          # path to .sql file or raw SQL string
+    db_path="data/my_project.db",      # persist to file (default: ":memory:")
+    skip_variable_tables={"query"},    # don't create a table for this input
+)
+result = rlm(query="Find all active projects led by engineers")
+```
+
+**`preload_sql`** accepts either a file path (e.g. `"schema.sql"`) or a raw SQL string. The DDL is executed once at startup. All tables -- including pre-loaded ones -- are visible in the LLM's prompt with column types, row counts, foreign key relationships, and CHECK constraints.
+
+**`db_path`** controls where the SQLite database lives. Use a file path for persistence across runs. When reopening an existing database, `preload_sql` detects that tables already exist and skips the DDL.
+
+**`skip_variable_tables`** prevents specified input variables from being materialized as SQL tables. Useful for string or structured inputs that serve as context rather than queryable data. These appear as plain text in the prompt instead.
+
+The LLM prompt shows the full schema from iteration 1:
+
+```
+Input variables:
+- query: "Find all active projects led by engineers"
+
+Database tables:
+- departments (id TEXT, name TEXT, budget REAL) -- 5 rows
+  CHECKs: budget >= 0
+- employees (id TEXT, name TEXT, department_id TEXT, role TEXT) -- 12 rows
+  FKs: department_id -> departments.id
+  CHECKs: role IN ('engineer','manager','designer','analyst')
+- projects (id TEXT, name TEXT, lead_id TEXT, status TEXT) -- 8 rows
+  FKs: lead_id -> employees.id
+  CHECKs: status IN ('active','completed','cancelled')
+```
+
+### Using the SQLInterpreter directly
+
+The underlying `SQLInterpreter` supports the same features and can be used standalone:
+
+```python
+from dspy_repl.interpreters.sql_interpreter import SQLInterpreter
+
+schema = """
+CREATE TABLE authors (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+CREATE TABLE books (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    author_id TEXT NOT NULL REFERENCES authors(id),
+    genre TEXT CHECK(genre IN ('fiction','nonfiction','poetry'))
+);
+"""
+
+with SQLInterpreter(preload_sql=schema) as interp:
+    # describe_tables() returns columns, row counts, FKs, and CHECKs
+    for t in interp.describe_tables():
+        print(t["name"], t.get("foreign_keys", []), t.get("checks", []))
+
+    interp.execute("INSERT INTO authors VALUES ('a1', 'Tolkien');")
+    interp.execute("INSERT INTO books VALUES ('b1', 'The Hobbit', 'a1', 'fiction');")
+    print(interp.execute("SELECT * FROM books;"))
+```
+
+### Tools as SQL functions
+
+Custom Python functions can be registered as SQLite UDFs, callable directly from SQL:
+
+```python
+def classify(text: str) -> str:
+    return "positive" if "good" in text.lower() else "negative"
+
+rlm = SQLRLM(
+    "reviews -> summary",
+    preload_sql="CREATE TABLE results (id INTEGER PRIMARY KEY, sentiment TEXT);",
+    tools=[classify],
+)
+# The LLM can write: INSERT INTO results SELECT id, classify(text) FROM reviews;
+```
+
 ## Observability and debugging
 
 `dspy-repl` is designed to expose what happened inside an RLM run:
