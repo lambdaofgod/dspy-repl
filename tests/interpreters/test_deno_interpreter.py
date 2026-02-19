@@ -7,7 +7,7 @@ import time
 import pytest
 
 from dspy_repl.core.code_interpreter import FinalOutput
-from dspy_repl.interpreters.deno_interpreter import DenoInterpreter
+from dspy_repl.interpreters.deno_interpreter import DenoInterpreter, DenoPermissions
 
 _needs_deno = pytest.mark.skipif(
     shutil.which("deno") is None or os.getenv("RUN_REPL_RUNTIME_TESTS") != "1",
@@ -18,11 +18,22 @@ _needs_deno = pytest.mark.skipif(
 # -- Unit tests (no Deno required) --
 
 
-def test_deno_permissions_parameter() -> None:
-    interp = DenoInterpreter(deno_permissions=["--allow-read", "--allow-net"])
-    assert "--allow-all" not in interp.deno_command
-    assert "--allow-read" in interp.deno_command
-    assert "--allow-net" in interp.deno_command
+def test_deno_permissions_validates_paths() -> None:
+    with pytest.raises(ValueError, match="does not exist"):
+        DenoPermissions(allow_read=["/nonexistent/path/abc123"])
+
+
+def test_deno_permissions_validates_hosts() -> None:
+    with pytest.raises(ValueError, match="Invalid port"):
+        DenoPermissions(allow_net=["example.com:notaport"])
+
+
+def test_deno_permissions_to_args() -> None:
+    perms = DenoPermissions(allow_net=["example.com:443", "api.test.com"], allow_read=["/tmp"], allow_write=["/tmp"])
+    args = perms.to_args()
+    assert "--allow-net=example.com:443,api.test.com" in args
+    assert "--allow-read=/tmp" in args
+    assert "--allow-write=/tmp" in args
 
 
 def test_deno_command_rejects_dict() -> None:

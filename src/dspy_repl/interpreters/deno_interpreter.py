@@ -17,9 +17,11 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any, Callable
 
+from pydantic import BaseModel
+
 from dspy_repl.core.code_interpreter import CodeInterpreterError, FinalOutput
 
-__all__ = ["DenoInterpreter", "FinalOutput", "CodeInterpreterError"]
+__all__ = ["DenoInterpreter", "DenoPermissions", "FinalOutput", "CodeInterpreterError"]
 
 logger = logging.getLogger(__name__)
 
@@ -83,13 +85,76 @@ _JS_RESERVED = frozenset(
 )
 
 
+class DenoPermissions(BaseModel):
+    """Fine-grained Deno subprocess permissions.
+
+    By default all permissions are denied. The prelude only needs stdio
+    (always available), so deny-all is a safe baseline.
+
+    Examples::
+
+        # No permissions (safe default)
+        DenoPermissions()
+
+        # Unrestricted network, read/write in one directory
+        DenoPermissions(allow_net=True, allow_read=["/tmp/sandbox"], allow_write=["/tmp/sandbox"])
+
+        # Network limited to one host
+        DenoPermissions(allow_net=["api.example.com:443"])
+    """
+
+    allow_net: bool | list[str] = True
+    allow_read: list[str] = []
+    allow_write: list[str] = []
+
+    @staticmethod
+    def _validate_paths(paths: list[str], label: str) -> None:
+        for p in paths:
+            resolved = os.path.abspath(p)
+            if not os.path.exists(resolved):
+                raise ValueError(f"{label} path does not exist: {p!r} (resolved to {resolved!r})")
+
+    @staticmethod
+    def _validate_hosts(hosts: list[str]) -> None:
+        for h in hosts:
+            parts = h.rsplit(":", 1)
+            hostname = parts[0]
+            if not hostname or hostname != hostname.strip():
+                raise ValueError(f"Invalid network host: {h!r}")
+            if len(parts) == 2:
+                try:
+                    port = int(parts[1])
+                except ValueError:
+                    raise ValueError(f"Invalid port in network host: {h!r}")
+                if not (1 <= port <= 65535):
+                    raise ValueError(f"Port out of range in network host: {h!r}")
+
+    def model_post_init(self, __context: Any) -> None:
+        self._validate_paths(self.allow_read, "allow_read")
+        self._validate_paths(self.allow_write, "allow_write")
+        if isinstance(self.allow_net, list):
+            self._validate_hosts(self.allow_net)
+
+    def to_args(self) -> list[str]:
+        args: list[str] = []
+        if self.allow_net is True:
+            args.append("--allow-net")
+        elif isinstance(self.allow_net, list) and self.allow_net:
+            args.append(f"--allow-net={','.join(self.allow_net)}")
+        if self.allow_read:
+            args.append(f"--allow-read={','.join(self.allow_read)}")
+        if self.allow_write:
+            args.append(f"--allow-write={','.join(self.allow_write)}")
+        return args
+
+
 class DenoInterpreter:
     """Stateful TypeScript interpreter backed by a Deno subprocess."""
 
     def __init__(
         self,
         deno_command: list[str] | None = None,
-        deno_permissions: list[str] | None = None,
+        deno_permissions: DenoPermissions = DenoPermissions(),
         tools: dict[str, Callable[..., Any]] | None = None,
         output_fields: list[dict] | None = None,
         execute_timeout_seconds: float = 90.0,
@@ -113,8 +178,7 @@ class DenoInterpreter:
         if deno_command:
             self.deno_command = list(deno_command)
         else:
-            permissions = list(deno_permissions) if deno_permissions else ["--allow-all"]
-            self.deno_command = ["deno", "run"] + permissions + [prelude_path]
+            self.deno_command = ["deno", "run"] + deno_permissions.to_args() + [prelude_path]
 
         self._process: subprocess.Popen[str] | None = None
         self._stdout_queue: queue.Queue[str | None] = queue.Queue()
