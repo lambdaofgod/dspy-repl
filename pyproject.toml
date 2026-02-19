@@ -16,8 +16,8 @@ include = [
 
 [project]
 name = "dspy-repl"
-version = "0.2.0"
-description = "Modular non-Python REPL engines for DSPy Recursive Language Models"
+version = "0.4.0"
+description = "Multi-language REPL engines for DSPy Recursive Language Models (RLM) with trajectory tracing and benchmark tooling"
 readme = "README.md"
 authors = [{ name = "Michael Pavlukhin", email = "michael@pavlukhinlab.com" }]
 license = { text = "MIT" }
@@ -26,16 +26,33 @@ dependencies = [
     "dspy-ai>=3.0.0",
     "pydantic>=2.0.0",
 ]
-keywords = ["dspy", "rlm", "repl", "scheme", "sql", "haskell", "llm"]
+keywords = [
+    "dspy",
+    "dspy-rlm",
+    "recursive-language-models",
+    "agent-framework",
+    "llm-agents",
+    "repl",
+    "code-interpreter",
+    "trajectory-tracing",
+    "benchmarking",
+    "long-context",
+    "scheme",
+    "sql",
+    "haskell",
+    "javascript",
+]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
@@ -52,6 +69,9 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/Archelunch/dspy-repl"
 Repository = "https://github.com/Archelunch/dspy-repl"
+Documentation = "https://github.com/Archelunch/dspy-repl#readme"
+Changelog = "https://github.com/Archelunch/dspy-repl/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Archelunch/dspy-repl/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dspy_repl"]

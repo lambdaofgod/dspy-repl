@@ -8,6 +8,7 @@ const TOOL_CALL_PREFIX = "__DSPY_TOOL_CALL__";
 const SUBMIT_PREFIX = "__DSPY_SUBMIT__";
 const ERROR_PREFIX = "__DSPY_ERROR__";
 const SUBMIT_SIGNAL = "__DSPY_SUBMIT_SIGNAL__";
+const VM_TIMEOUT_MS = 60_000;
 
 const state = {
   toolNames: new Set(),
@@ -90,6 +91,13 @@ function callTool(name, args) {
   });
 }
 
+function rejectAllPending(reason) {
+  for (const [id, pending] of state.pendingToolCalls.entries()) {
+    state.pendingToolCalls.delete(id);
+    pending.reject(new Error(reason));
+  }
+}
+
 function formatError(err) {
   if (!err) {
     return "Unknown JavaScript execution error";
@@ -119,8 +127,10 @@ async function executeCode(code, variables) {
   try {
     await vm.runInContext(wrapped, context, {
       displayErrors: true,
+      timeout: VM_TIMEOUT_MS,
     });
   } catch (err) {
+    rejectAllPending(formatError(err));
     if (!(err && err.message === SUBMIT_SIGNAL)) {
       emit(`${ERROR_PREFIX}${formatError(err)}`);
     }

@@ -8,6 +8,7 @@ import logging
 import os
 import queue
 import select
+import signal
 import subprocess
 import threading
 import time
@@ -135,6 +136,7 @@ class SchemeInterpreter:
                     text=True,
                     encoding="UTF-8",
                     env=os.environ.copy(),
+                    start_new_session=True,
                 )
             except FileNotFoundError as e:
                 install_instructions = (
@@ -201,11 +203,19 @@ class SchemeInterpreter:
 
     def _call_tool_with_timeout(self, tool_name: str, args: list[Any], kwargs: dict[str, Any]) -> Any:
         result_queue: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
+        cancel_event = threading.Event()
 
         def worker() -> None:
             try:
                 assert tool_name in self.tools
-                result_queue.put((True, self.tools[tool_name](*args, **kwargs)))
+                fn = self.tools[tool_name]
+                call_kwargs = dict(kwargs)
+                params = inspect.signature(fn).parameters
+                if "cancel_event" in params and "cancel_event" not in call_kwargs:
+                    call_kwargs["cancel_event"] = cancel_event
+                if "_cancel_event" in params and "_cancel_event" not in call_kwargs:
+                    call_kwargs["_cancel_event"] = cancel_event
+                result_queue.put((True, fn(*args, **call_kwargs)))
             except Exception as exc:
                 result_queue.put((False, exc))
 
@@ -213,6 +223,7 @@ class SchemeInterpreter:
         thread.start()
         thread.join(self.tool_timeout_seconds)
         if thread.is_alive():
+            cancel_event.set()
             raise TimeoutError(f"Tool '{tool_name}' timed out after {self.tool_timeout_seconds:.1f}s.")
         ok, payload = result_queue.get_nowait()
         if ok:
@@ -415,8 +426,15 @@ class SchemeInterpreter:
                 self._process.stdin.close()
                 self._process.wait(timeout=5)
             except Exception:
-                self._process.kill()
-                self._process.wait()
+                try:
+                    os.killpg(self._process.pid, signal.SIGTERM)
+                    self._process.wait(timeout=2)
+                except Exception:
+                    try:
+                        os.killpg(self._process.pid, signal.SIGKILL)
+                    except Exception:
+                        self._process.kill()
+                    self._process.wait()
         self._process = None
         self._owner_thread = None
 

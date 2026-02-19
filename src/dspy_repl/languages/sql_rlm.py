@@ -51,13 +51,14 @@ SQL_ACTION_INSTRUCTIONS_TEMPLATE = """You are tasked with producing the followin
 You have access to a SQLite REPL environment. Write SQL and it will be executed. You will see output, then write more SQL based on what you learned. This is an iterative process.
 
 Available:
-- Input variables are preloaded as SQL TABLES, not columns.
+- Input variables may be preloaded as SQL tables or provided as plain-text context (see variables_info).
+- The database may contain pre-existing tables with FOREIGN KEY and CHECK constraints. Respect insert ordering: parent tables before child tables.
 - llm_query(prompt) - query a sub-LLM for semantic analysis
 - llm_query_batched(prompt1, prompt2, ...) - query multiple prompts concurrently, returns JSON array string
 - SUBMIT(json_object(...)) - submit final output when done
 
 IMPORTANT: This is ITERATIVE.
-1. EXPLORE FIRST - inspect table schemas and sample rows before processing.
+1. READ VARIABLES_INFO FIRST - it shows table schemas, FK relationships, CHECK constraints, and row counts.
 2. ITERATE - run small SQL snippets and inspect outputs.
 3. VERIFY BEFORE SUBMITTING - if results look wrong, revise.
 4. USE llm_query FOR SEMANTICS - SQL finds structure; llm_query handles semantic interpretation.
@@ -80,9 +81,15 @@ class SQLRLM(BaseReplRLM):
         tools: list[Callable] | None = None,
         sub_lm: dspy.LM | None = None,
         interpreter: CodeInterpreter | None = None,
+        db_path: str = ":memory:",
+        preload_sql: str | None = None,
+        skip_variable_tables: set[str] | None = None,
     ) -> None:
         self.signature = ensure_signature(signature)
         self.sub_lm = sub_lm
+        self._db_path = db_path
+        self._preload_sql = preload_sql
+        self._skip_variable_tables = set(skip_variable_tables) if skip_variable_tables else set()
         self._variables_info_cache_key: tuple[Any, ...] | None = None
         self._variables_info_cache_value: str | None = None
         self.last_sql_profile: dict[str, float] = {}
@@ -111,7 +118,26 @@ class SQLRLM(BaseReplRLM):
 
     def _create_interpreter(self, execution_tools: dict[str, Callable]) -> CodeInterpreter:
         interpreter_cls = load_sql_interpreter()
-        return interpreter_cls(tools=execution_tools, output_fields=self._get_output_fields_info())
+        return interpreter_cls(
+            db_path=self._db_path,
+            preload_sql=self._preload_sql,
+            skip_variable_tables=self._skip_variable_tables or None,
+            tools=execution_tools,
+            output_fields=self._get_output_fields_info(),
+        )
+
+    @staticmethod
+    def _format_table_line(table: dict[str, Any]) -> str:
+        columns = ", ".join(table.get("columns", []))
+        rows = table.get("rows", 0)
+        line = f"- {table['name']} ({columns}) -- {rows} rows"
+        fks = table.get("foreign_keys", [])
+        if fks:
+            line += f"\n  FKs: {', '.join(fks)}"
+        checks = table.get("checks", [])
+        if checks:
+            line += f"\n  CHECKs: {'; '.join(checks)}"
+        return line
 
     def _variables_info_for_prompt(self, repl: CodeInterpreter, variables: list[REPLVariable]) -> str:
         generation = -1
@@ -125,27 +151,44 @@ class SQLRLM(BaseReplRLM):
         if cache_key == self._variables_info_cache_key and self._variables_info_cache_value is not None:
             return self._variables_info_cache_value
 
-        table_info: list[dict[str, Any]] = []
+        all_table_info: list[dict[str, Any]] = []
         if hasattr(repl, "describe_tables"):
             try:
-                table_info = repl.describe_tables([v.name for v in variables])
+                all_table_info = repl.describe_tables()
             except Exception:
-                table_info = []
+                all_table_info = []
 
-        if not table_info:
+        if not all_table_info:
             return "\n\n".join(v.format() for v in variables)
 
-        lines = ["Available tables:"]
-        by_name = {entry["name"]: entry for entry in table_info}
+        by_name = {entry["name"]: entry for entry in all_table_info}
+        var_names = {v.name for v in variables}
+        skip_names = self._skip_variable_tables
+
+        input_var_lines: list[str] = []
         for var in variables:
-            table = by_name.get(var.name)
-            if not table:
-                lines.append(f"- {var.name} (table not found)")
+            if var.name in skip_names:
+                input_var_lines.append(f"- {var.name}: {var.preview}")
                 continue
-            columns = ", ".join(table.get("columns", []))
-            rows = table.get("rows", 0)
-            lines.append(f"- {var.name} ({columns}) -- {rows} rows")
-        formatted = "\n".join(lines)
+            table = by_name.pop(var.name, None)
+            if not table:
+                input_var_lines.append(f"- {var.name} (table not found)")
+                continue
+            input_var_lines.append(self._format_table_line(table))
+
+        schema_lines: list[str] = []
+        for name in sorted(by_name):
+            if name in var_names:
+                continue
+            schema_lines.append(self._format_table_line(by_name[name]))
+
+        sections: list[str] = []
+        if input_var_lines:
+            sections.append("Input variables:\n" + "\n".join(input_var_lines))
+        if schema_lines:
+            sections.append("Database tables:\n" + "\n".join(schema_lines))
+
+        formatted = "\n\n".join(sections) if sections else "\n\n".join(v.format() for v in variables)
         self._variables_info_cache_key = cache_key
         self._variables_info_cache_value = formatted
         return formatted

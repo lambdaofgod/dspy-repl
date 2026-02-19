@@ -61,6 +61,9 @@ IMPORTANT: This is ITERATIVE.
 3. VERIFY BEFORE SUBMITTING - if results look wrong, revise.
 4. USE llmQuery FOR SEMANTICS where needed.
 5. SUBMIT ONLY AFTER SEEING OUTPUTS.
+6. NEVER write while(true) or unbounded loops without a guaranteed break condition.
+7. llmQuery and llmQueryBatched are async; always await their results.
+8. Avoid setTimeout/setInterval for control flow in this sandboxed runtime.
 
 You have max {max_llm_calls} sub-LLM calls. When done, call submit with your output."""
 

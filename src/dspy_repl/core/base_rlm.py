@@ -344,7 +344,6 @@ class BaseReplRLM(Module):
                 "ignore",
                 message=self._PYDANTIC_SERIALIZER_WARNING_RE,
                 category=UserWarning,
-                module=r"pydantic\.main",
             )
             yield
 
