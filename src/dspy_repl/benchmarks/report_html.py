@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-from html import escape
 from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -71,9 +71,7 @@ def _build_table_html(derived_rows: list[dict[str, Any]]) -> str:
         score = float(row.get("avg_score", 0.0))
         success_rate = float(row.get("success_rate", 0.0))
         score_class = "metric-good" if score >= 0.8 else "metric-warn" if score >= 0.5 else "metric-bad"
-        success_class = (
-            "metric-good" if success_rate >= 0.8 else "metric-warn" if success_rate >= 0.5 else "metric-bad"
-        )
+        success_class = "metric-good" if success_rate >= 0.8 else "metric-warn" if success_rate >= 0.5 else "metric-bad"
         body_rows.append(
             "<tr class='metrics-row'>"
             f"<td>{_safe_text(row.get('run_id', ''))}</td>"
@@ -221,19 +219,19 @@ def _build_per_sample_results_html(
         )
         rows.append(
             f"""
-<tr class="sample-row" data-engine="{_safe_text(row.get('engine', ''))}" data-status="{'success' if row.get('success') else 'failed'}">
-  <td>{_safe_text(row.get('run_id', ''))}</td>
-  <td>{_safe_text(row.get('dataset', ''))}</td>
-  <td><span class="engine-dot" style="background:{_engine_color(str(row.get('engine', '')))}"></span>{_safe_text(row.get('engine', ''))}</td>
-  <td>{_safe_text(row.get('sample_id', ''))}</td>
+<tr class="sample-row" data-engine="{_safe_text(row.get("engine", ""))}" data-status="{"success" if row.get("success") else "failed"}">
+  <td>{_safe_text(row.get("run_id", ""))}</td>
+  <td>{_safe_text(row.get("dataset", ""))}</td>
+  <td><span class="engine-dot" style="background:{_engine_color(str(row.get("engine", "")))}"></span>{_safe_text(row.get("engine", ""))}</td>
+  <td>{_safe_text(row.get("sample_id", ""))}</td>
   <td>{score:.3f}</td>
-  <td>{float(row.get('elapsed_seconds', 0.0)):.2f}</td>
-  <td>{int(row.get('iterations', 0))}</td>
+  <td>{float(row.get("elapsed_seconds", 0.0)):.2f}</td>
+  <td>{int(row.get("iterations", 0))}</td>
   <td>{status_badge}</td>
-  <td>{_safe_text(row.get('error', '') or '')}</td>
+  <td>{_safe_text(row.get("error", "") or "")}</td>
   <td>{_safe_text(preview)}</td>
 </tr>
-<tr class="sample-detail-row" data-engine="{_safe_text(row.get('engine', ''))}" data-status="{'success' if row.get('success') else 'failed'}">
+<tr class="sample-detail-row" data-engine="{_safe_text(row.get("engine", ""))}" data-status="{"success" if row.get("success") else "failed"}">
   <td colspan="10">{details_html}</td>
 </tr>
 """
@@ -259,7 +257,7 @@ def _build_per_sample_results_html(
       <th>Run</th><th>Dataset</th><th>Engine</th><th>Sample</th><th>Score</th><th>Latency (s)</th><th>Iterations</th><th>Status</th><th>Error</th><th>Trajectory Preview</th>
     </tr>
   </thead>
-  <tbody>{''.join(rows)}</tbody>
+  <tbody>{"".join(rows)}</tbody>
 </table>
 </div>
 """
@@ -437,7 +435,9 @@ def render_html_report(analysis: dict[str, Any], output_path: Path) -> Path:
         sum(float(row.get("success_rate", 0.0)) for row in derived_rows) / len(derived_rows) if derived_rows else 0.0
     )
     avg_latency = (
-        sum(float(row.get("avg_latency_seconds", 0.0)) for row in derived_rows) / len(derived_rows) if derived_rows else 0.0
+        sum(float(row.get("avg_latency_seconds", 0.0)) for row in derived_rows) / len(derived_rows)
+        if derived_rows
+        else 0.0
     )
     all_engines = sorted({str(row.get("engine", "")) for row in derived_rows if row.get("engine")})
     total_rows = len(derived_rows)
