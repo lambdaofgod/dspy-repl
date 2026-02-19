@@ -10,7 +10,7 @@ from pydantic import Field
 from dspy_repl.compat import dspy, ensure_signature, get_active_lm, translate_field_type
 from dspy_repl.core.base_rlm import BaseReplRLM
 from dspy_repl.core.code_interpreter import CodeInterpreter
-from dspy_repl.core.repl_types import REPLEntry, REPLHistory
+from dspy_repl.core.repl_types import REPLEntry, REPLHistory, REPLVariable
 from dspy_repl.interpreters.deno_interpreter import DenoInterpreter
 
 if TYPE_CHECKING:
@@ -97,6 +97,16 @@ class DenoRLM(BaseReplRLM):
 
     def _new_history(self) -> DenoREPLHistory:
         return DenoREPLHistory(max_output_chars=self.max_output_chars)
+
+    def _variables_info_for_prompt(self, repl: CodeInterpreter, variables: list[REPLVariable]) -> str:
+        info = "\n\n".join(variable.format() for variable in variables)
+        if isinstance(repl, DenoInterpreter):
+            perm_args = repl.deno_permissions.to_args()
+            if perm_args:
+                info += f"\n\nDeno sandbox permissions: {' '.join(perm_args)}"
+            else:
+                info += "\n\nDeno sandbox permissions: none (no network, no file access)"
+        return info
 
     def _format_output(self, output: str) -> str:
         return output or "(no output - did you forget console.log?)"

@@ -164,6 +164,7 @@ class DenoInterpreter:
         if isinstance(deno_command, dict):
             raise TypeError("deno_command must be a list of strings, not a dict")
 
+        self.deno_permissions = deno_permissions
         self.tools = dict(tools) if tools else {}
         self.output_fields = output_fields
         self.execute_timeout_seconds = float(execute_timeout_seconds)
