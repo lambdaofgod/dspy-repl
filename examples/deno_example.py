@@ -1,4 +1,5 @@
 import argparse
+import atexit
 import logging
 import os
 from datetime import datetime
@@ -8,6 +9,32 @@ from dspy_repl import DenoRLM
 from dspy_repl.interpreters.deno_interpreter import DenoInterpreter, DenoPermissions
 
 logging.basicConfig(level=logging.INFO)
+
+
+def setup_otel_tracing(endpoint: str, otel_project: str) -> None:
+    """Set up OpenTelemetry tracing with DSPy instrumentation, sending spans via OTLP."""
+    try:
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+            OTLPSpanExporter,
+        )
+        from openinference.instrumentation.dspy import DSPyInstrumentor
+    except ImportError as e:
+        raise ImportError(
+            f"OpenTelemetry tracing requires extra packages: {e}\n"
+            "Install with: uv add opentelemetry-sdk opentelemetry-exporter-otlp openinference-instrumentation-dspy"
+        ) from e
+
+    provider = TracerProvider(resource=Resource({"service.name": otel_project}))
+    provider.add_span_processor(
+        BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint, insecure=True))
+    )
+    atexit.register(provider.shutdown)
+
+    DSPyInstrumentor().instrument(tracer_provider=provider)
+    logging.info("OTel tracing enabled, sending to %s", endpoint)
 
 
 def main() -> None:
@@ -31,20 +58,20 @@ def main() -> None:
         help="Directory to allow for both read and write access",
     )
     parser.add_argument(
-        "--logdir",
-        metavar="PATH",
+        "--otel-endpoint",
+        metavar="URL",
         default=None,
-        help="Directory to write log files (e.g. rlm_deno_2026-02-04_17-44-14.log)",
+        help="OTLP gRPC endpoint for OTel traces (e.g. http://localhost:4317)",
+    )
+    parser.add_argument(
+        "--otel-project",
+        default="dspy-repl-deno",
+        help="OpenTelemetry project name for exporting spans (default: dspy-repl-deno)",
     )
     args = parser.parse_args()
 
-    if args.logdir:
-        os.makedirs(args.logdir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        log_path = os.path.join(args.logdir, f"rlm_deno_{timestamp}.log")
-        file_handler = logging.FileHandler(log_path)
-        file_handler.setLevel(logging.INFO)
-        logging.getLogger().addHandler(file_handler)
+    if args.otel_endpoint:
+        setup_otel_tracing(args.otel_endpoint, args.otel_project)
 
     dspy.configure(lm=dspy.LM(args.model))
 
